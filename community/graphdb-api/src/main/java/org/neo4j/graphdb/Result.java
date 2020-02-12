@@ -267,4 +267,10 @@ public interface Result extends ResourceIterator<Map<String,Object>>
          */
         boolean visit( ResultRow row ) throws VisitationException;
     }
+
+    // TAG: Lazy Implementation
+    /* Jeff's Lazy Additions */
+    default public String lazyResultAsString() {
+        throw new UnsupportedOperationException("Error: lazyResultAsString not implemented");
+    }
 }

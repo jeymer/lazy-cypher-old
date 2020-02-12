@@ -47,11 +47,15 @@ class StandardInternalExecutionResult(context: QueryContext,
   override def initiate(): Unit = {
     // For write only queries and queries that return no rows, execute all
     // work immediately, and close all resources.
+
+    // TAG: Lazy Implementation
+    /*
     if (queryType == WRITE || fieldNames().isEmpty) {
       request(1)
       await()
       close(Success)
     }
+    */
 
     subscriber match {
       case coreAPI: ResultSubscriber =>
@@ -149,6 +153,8 @@ class StandardInternalExecutionResult(context: QueryContext,
     case _ => throw new IllegalStateException("Can't call accept on a non-visitable result")
 
   }
+  // TAG: Lazy Implementation
+  override def lazyRequest(numberOfRows: Long): Boolean = runtimeResult.lazyRequest(numberOfRows)
 }
 
 

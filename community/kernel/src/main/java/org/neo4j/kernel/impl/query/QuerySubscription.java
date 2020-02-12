@@ -54,4 +54,10 @@ public interface QuerySubscription
         request( Long.MAX_VALUE );
         await();
     }
+
+    // TAG: Lazy Implementation
+    /* Jeff's Lazy additions */
+    default boolean lazyRequest( long numberOfRecords ) throws Exception {
+        throw new UnsupportedOperationException("Error: lazyRequest not implemented");
+    }
 }

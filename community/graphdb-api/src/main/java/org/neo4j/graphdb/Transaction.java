@@ -466,4 +466,21 @@ public interface Transaction extends AutoCloseable
      */
     @Override
     void close();
+
+    // TAG: Lazy Implementation
+    /* Jeff's Lazy Additions */
+
+    default int delayedOperationsRemaining() {
+        throw new UnsupportedOperationException("Error delayedOperationsRemaining not implemented");
+    }
+
+    default long lazyExecute(String query) {
+        throw new UnsupportedOperationException("Error: lazyExecute not implemented");
+    }
+
+    default boolean propagate() {
+        throw new UnsupportedOperationException("Error: propagate not implemented");
+    }
+
+
 }

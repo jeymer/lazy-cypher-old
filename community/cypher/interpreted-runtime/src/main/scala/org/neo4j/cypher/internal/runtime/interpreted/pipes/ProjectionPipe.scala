@@ -36,8 +36,14 @@ case class ProjectionPipe(source: Pipe, projection: CommandProjection)
     else {
       input.map {
         ctx =>
-          projection.project(ctx, state)
-          ctx
+          // TAG: Lazy Implementation
+          if(ctx == null) {
+            null
+          }
+          else {
+            projection.project(ctx, state)
+            ctx
+          }
       }
     }
   }

@@ -38,8 +38,17 @@ case class ProduceResultsPipe(source: Pipe, columns: Array[String])
     else
       input.map {
         original =>
-          produce(original, subscriber)
-          original
+          {
+            // TAG: Lazy Implementation
+            if(original == null) {
+              null
+            }
+            else {
+              produce(original, subscriber)
+              original
+            }
+          }
+
       }
   }
 

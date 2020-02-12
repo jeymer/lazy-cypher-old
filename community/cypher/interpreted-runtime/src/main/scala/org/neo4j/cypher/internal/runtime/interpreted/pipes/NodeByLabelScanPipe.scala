@@ -32,7 +32,15 @@ case class NodeByLabelScanPipe(ident: String, label: LazyLabel)
     if (id != UNKNOWN) {
         val nodes = state.query.getNodesByLabel(id)
         val baseContext = state.newExecutionContext(executionContextFactory)
-        nodes.map(n => executionContextFactory.copyWith(baseContext, ident, n))
+        nodes.map(n => {
+          // TAG: Lazy Implementation
+          if (n == null) {
+            null
+          }
+          else {
+            executionContextFactory.copyWith(baseContext, ident, n)
+          }
+        })
     } else Iterator.empty
   }
 }

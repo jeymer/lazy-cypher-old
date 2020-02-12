@@ -71,16 +71,28 @@ class PipeExecutionResult(pipe: Pipe,
     inner.hasNext && !cancelled
   }
 
-  private def serveResults(): Unit = {
+  private def serveResults(): Boolean = {
     while (inner.hasNext && demand > 0 && !cancelled) {
-      inner.next()
+      if(inner.next() == null) {
+        return false
+      }
       demand -= 1L
     }
     if (!inner.hasNext) {
       subscriber.onResultCompleted(state.getStatistics)
     }
+    true
   }
 
   private def checkForOverflow(value: Long): Long =
     if (value < 0) Long.MaxValue else value
+
+  // TAG: Lazy Implementation
+  override def lazyRequest(numberOfRecords: Long): Boolean = {
+    if (inner == null) {
+      inner = pipe.createResults(state)
+    }
+    demand = checkForOverflow(demand + numberOfRecords)
+    serveResults()
+  }
 }

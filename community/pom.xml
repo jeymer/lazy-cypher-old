@@ -12,8 +12,28 @@
   <groupId>org.neo4j.build</groupId>
   <artifactId>community-build</artifactId>
   <version>4.0.1-SNAPSHOT</version>
+    <dependencies>
+        <dependency>
+            <groupId>org.neo4j</groupId>
+            <artifactId>neo4j-graphdb-api</artifactId>
+            <version>4.0.1-SNAPSHOT</version>
+            <scope>compile</scope>
+        </dependency>
+      <dependency>
+        <groupId>org.neo4j</groupId>
+        <artifactId>neo4j-graphdb-api</artifactId>
+        <version>4.0.1-SNAPSHOT</version>
+        <scope>compile</scope>
+      </dependency>
+        <dependency>
+            <groupId>org.neo4j</groupId>
+            <artifactId>neo4j</artifactId>
+            <version>4.0.1-SNAPSHOT</version>
+            <scope>compile</scope>
+        </dependency>
+    </dependencies>
 
-  <name>Neo4j - Community Build</name>
+    <name>Neo4j - Community Build</name>
   <packaging>pom</packaging>
   <description>Project that builds the Neo4j Community distribution.</description>
   <url>http://components.neo4j.org/${project.artifactId}/${project.version}</url>

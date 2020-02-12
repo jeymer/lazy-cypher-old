@@ -305,7 +305,8 @@ sealed class TransactionBoundQueryContext(val transactionalContext: Transactiona
   override def getNodesByLabel(id: Int): Iterator[NodeValue] = {
     val cursor = allocateAndTraceNodeLabelIndexCursor()
     reads().nodeLabelScan(id, cursor)
-    new CursorIterator[NodeValue] {
+    // TAG: Lazy Implementation
+    new LazyNodeValueCursorIterator {
       override protected def fetchNext(): NodeValue = {
         if (cursor.next()) fromNodeEntity(entityAccessor.newNodeEntity(cursor.nodeReference()))
         else null
@@ -496,7 +497,8 @@ sealed class TransactionBoundQueryContext(val transactionalContext: Transactiona
     override def all: Iterator[NodeValue] = {
       val nodeCursor = allocateAndTraceNodeCursor()
       reads().allNodesScan(nodeCursor)
-      new CursorIterator[NodeValue] {
+      // TAG: Lazy Implementation
+      new LazyNodeValueCursorIterator {
         override protected def fetchNext(): NodeValue = {
           if (nodeCursor.next()) fromNodeEntity(entityAccessor.newNodeEntity(nodeCursor.nodeReference()))
           else null
@@ -902,7 +904,8 @@ sealed class TransactionBoundQueryContext(val transactionalContext: Transactiona
   }
 
   abstract class CursorIterator[T] extends Iterator[T] with AutoCloseable {
-    private var _next: T = fetchNext()
+    // TAG: Lazy Implementation
+    protected var _next: T = fetchNext()
 
     protected def fetchNext(): T
 
@@ -920,6 +923,43 @@ sealed class TransactionBoundQueryContext(val transactionalContext: Transactiona
       _next = fetchNext()
       if (!hasNext) {
         close()
+      }
+      current
+    }
+  }
+
+  // TAG: Lazy Implementation
+  abstract class LazyNodeValueCursorIterator extends CursorIterator[NodeValue] {
+
+    /* Lazy additions */
+    private val _strideSize: Int = 3
+    private var _currentcount: Int = 0
+    protected var _finished: Boolean = false
+    def isFinished: Boolean = _finished
+
+    protected def fetchNext(): NodeValue
+
+    protected def close(): Unit
+
+    override def next(): NodeValue = {
+      if (!hasNext) {
+        close()
+        _finished = true
+        Iterator.empty.next()
+      }
+
+      if(_currentcount == _strideSize) {
+        // Finished exploring stride size
+        _currentcount = 0
+        return null
+      }
+
+      val current = _next
+      _next = fetchNext()
+      _currentcount += 1
+      if (!hasNext) {
+        close()
+        _finished = true
       }
       current
     }

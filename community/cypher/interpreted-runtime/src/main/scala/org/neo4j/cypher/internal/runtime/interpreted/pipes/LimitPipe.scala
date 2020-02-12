@@ -54,9 +54,13 @@ case class LimitPipe(source: Pipe, exp: Expression)
       def hasNext: Boolean = remaining > 0 && input.hasNext
 
       def next(): ExecutionContext =
+        // TAG: Lazy Implementation
         if (remaining > 0L) {
-          remaining -= 1L
-          input.next()
+          val n = input.next()
+          if(n != null) {
+            remaining -= 1L
+          }
+          n
         }
         else empty.next()
     }

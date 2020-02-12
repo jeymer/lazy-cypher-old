@@ -29,6 +29,10 @@ case class FilterPipe(source: Pipe, predicate: Expression)
 
   predicate.registerOwningPipe(this)
 
-  protected def internalCreateResults(input: Iterator[ExecutionContext], state: QueryState): Iterator[ExecutionContext] =
-    input.filter(ctx => predicate(ctx, state) eq Values.TRUE)
+  protected def internalCreateResults(input: Iterator[ExecutionContext], state: QueryState): Iterator[ExecutionContext] = {
+    // TAG: Lazy Implementation
+    input.filter(ctx => {
+      (ctx == null) || (predicate(ctx, state) eq Values.TRUE)
+    })
+  }
 }

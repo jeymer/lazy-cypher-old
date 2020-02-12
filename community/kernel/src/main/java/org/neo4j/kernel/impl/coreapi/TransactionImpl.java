@@ -19,10 +19,7 @@
  */
 package org.neo4j.kernel.impl.coreapi;
 
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 import org.neo4j.common.EntityType;
 import org.neo4j.exceptions.KernelException;
@@ -861,4 +858,65 @@ public class TransactionImpl implements InternalTransaction
     {
         void perform( KernelTransaction transaction ) throws Exception;
     }
+
+    // TAG: Lazy Implementation
+    /* Jeff's Lazy Additions */
+
+    private static class DelayedOperation {
+        private static long _next_operation_num = 0;
+        protected long operation_num;
+        String query;
+        Result result;
+
+        public DelayedOperation(String query, Result result) {
+            this.operation_num = _next_operation_num++;
+            this.query = query;
+            this.result = result;
+        }
+    }
+
+    ArrayList<DelayedOperation> delayed = new ArrayList<>();
+
+    public int delayedOperationsRemaining() {
+        return delayed.size();
+    }
+
+    public long lazyExecute(String query) {
+        DelayedOperation delayed = new DelayedOperation(query,this.execute(query));
+        this.delayed.add(delayed);
+        return delayed.operation_num;
+    }
+
+    private boolean propagateRandom() {
+        if(this.delayed.isEmpty()) {
+            return false;
+        }
+        int index = (int)(Math.random() * this.delayed.size());
+        String result = this.delayed.get(index).result.lazyResultAsString();
+        if(result != null) {
+            System.out.println(result);
+            this.delayed.remove(index);
+            return true;
+        }
+        return false;
+    }
+
+    private boolean propagateFirst() {
+        if(this.delayed.isEmpty()) {
+            return false;
+        }
+        String result = this.delayed.get(0).result.lazyResultAsString();
+        if(result != null) {
+            System.out.println(result);
+            this.delayed.remove(0);
+            return true;
+        }
+        return false;
+    }
+    public boolean propagate() {
+        return propagateFirst();
+        //return propagateRandom();
+    }
+
+
 }

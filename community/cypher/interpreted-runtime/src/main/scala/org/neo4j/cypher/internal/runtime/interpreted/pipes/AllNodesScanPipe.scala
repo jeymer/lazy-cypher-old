@@ -26,7 +26,15 @@ case class AllNodesScanPipe(ident: String)(val id: Id = Id.INVALID_ID) extends P
 
   protected def internalCreateResults(state: QueryState): Iterator[ExecutionContext] = {
     val baseContext = state.newExecutionContext(executionContextFactory)
-    state.query.nodeOps.all.map(n => executionContextFactory.copyWith(baseContext, ident, n))
+    state.query.nodeOps.all.map(n => {
+      // TAG: Lazy Implementation
+      if(n == null) {
+        null
+      }
+      else {
+        executionContextFactory.copyWith(baseContext, ident, n)
+      }
+    })
   }
 
 }

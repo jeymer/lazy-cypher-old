@@ -167,6 +167,14 @@ class ClosingExecutionResult private(val query: ExecutingQuery,
 
   override def accept[VisitationException <: Exception](visitor: Result.ResultVisitor[VisitationException]): org.neo4j.graphdb.QueryStatistics =
     inner.accept(visitor)
+
+  // TAG: Lazy Implementation
+  override def lazyRequest(numberOfRows: Long): Boolean = try {
+    inner.lazyRequest(numberOfRows)
+  } catch {
+    case NonFatalCypherError(e) => closeAndCallOnError(e)
+    false
+  }
 }
 
 object ClosingExecutionResult {

@@ -443,4 +443,115 @@ public class ResultSubscriber extends PrefetchingResourceIterator<Map<String,Obj
     {
         return materializeResult != null;
     }
+
+    // TAG: Lazy Implementation
+    /* Jeff's Lazy Additions */
+    private StringWriter lazyOut;
+    private PrintWriter lazyWriter;
+
+    @Override
+    public String lazyResultAsString()
+    {
+        /* Initialize writers if first time */
+        if(this.lazyWriter == null) {
+            this.lazyOut = new StringWriter();
+            this.lazyWriter = new PrintWriter( this.lazyOut );
+        }
+
+        boolean success = lazyWriteAsStringTo( this.lazyWriter );
+
+        if(success) {
+            this.lazyWriter.flush();
+            return this.lazyOut.toString();
+        }
+
+        return null;
+    }
+
+    private ResultStringBuilder lazyStringBuilder;
+    public boolean lazyWriteAsStringTo( PrintWriter writer )
+    {
+        if(this.lazyStringBuilder == null) {
+            this.lazyStringBuilder =
+                    ResultStringBuilder.apply( execution.fieldNames(), context );
+        }
+
+        try
+        {
+            //don't materialize since that will close down the underlying transaction
+            //and we need it to be open in order to serialize nodes, relationships, and
+            //paths
+            if ( this.hasFetchedNext() )
+            {
+                this.lazyStringBuilder.addRow( new ResultRowImpl( this.getNextObject() ) );
+            }
+            boolean success = lazyAccept( this.lazyStringBuilder );
+            if(success) {
+                this.lazyStringBuilder.result( writer, statistics );
+                for ( Notification notification : getNotifications() )
+                {
+                    writer.println( notification.getDescription() );
+                }
+            }
+            return success;
+        }
+        catch ( Exception e )
+        {
+            close();
+            throw converted( e );
+        }
+    }
+
+    public <VisitationException extends Exception> boolean lazyAccept( ResultVisitor<VisitationException> visitor )
+            throws VisitationException
+    {
+        boolean success = false;
+        if ( isMaterialized() )
+        {
+            acceptFromMaterialized( visitor );
+        }
+        else if ( execution.isVisitable() )
+        {
+            this.statistics = execution.accept( visitor );
+        }
+        else
+        {
+            success = lazyAcceptFromSubscriber( visitor );
+        }
+        if(success) {
+            close();
+        }
+        return success;
+    }
+
+    @SuppressWarnings( "unchecked" )
+    private <VisitationException extends Exception> boolean lazyAcceptFromSubscriber(
+            ResultVisitor<VisitationException> visitor ) throws VisitationException
+    {
+        this.visitor = visitor;
+        boolean success = lazyFetchResults( Long.MAX_VALUE );
+        if ( visitException != null )
+        {
+            throw (VisitationException) visitException;
+        }
+        assertNoErrors();
+        return success;
+    }
+
+    private boolean lazyFetchResults( long numberOfResults )
+    {
+        try
+        {
+            boolean success = execution.lazyRequest( numberOfResults );
+            assertNoErrors();
+            execution.await();
+            return success;
+        }
+        catch ( Exception e )
+        {
+            close();
+            throw converted( e );
+        }
+    }
+
 }
