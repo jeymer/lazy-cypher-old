@@ -136,16 +136,18 @@ case class CreatePipe(src: Pipe, nodes: Array[CreateNodeCommand], relationships:
 
   override def internalCreateResults(input: Iterator[ExecutionContext], state: QueryState): Iterator[ExecutionContext] =
     input.map(row => {
-      nodes.foreach { nodeCommand =>
-        val (key, node) = createNode(row, state, nodeCommand)
-        row.set(key, node)
-      }
+      // TAG: Lazy Implementation
+      if(row != null) {
+        nodes.foreach { nodeCommand =>
+          val (key, node) = createNode(row, state, nodeCommand)
+          row.set(key, node)
+        }
 
-      relationships.foreach{ relCommand =>
-        val (key, node) = createRelationship(row, state, relCommand)
-        row.set(key, node)
+        relationships.foreach { relCommand =>
+          val (key, node) = createRelationship(row, state, relCommand)
+          row.set(key, node)
+        }
       }
-
       row
     })
 

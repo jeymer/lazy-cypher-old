@@ -509,6 +509,9 @@ public class ResultSubscriber extends PrefetchingResourceIterator<Map<String,Obj
         if ( isMaterialized() )
         {
             acceptFromMaterialized( visitor );
+            // TAG: Lazy Implementation
+            // Note: Should this be true? Should the query ever be materialized in the lazy system?
+            success = true;
         }
         else if ( execution.isVisitable() )
         {

@@ -64,7 +64,8 @@ class StandardInternalExecutionResult(context: QueryContext,
 
         // By policy we materialize the result directly unless it's a read only query.
         if (queryType != READ_ONLY) {
-          coreAPI.materialize(this)
+          // TAG: Lazy Implementation
+          // coreAPI.materialize(this)
         }
 
         // ... and if we do not return any rows, we close all resources.

@@ -36,16 +36,20 @@ case class DeletePipe(src: Pipe, expression: Expression, forced: Boolean)
   override protected def internalCreateResults(input: Iterator[ExecutionContext],
                                                state: QueryState): Iterator[ExecutionContext] = {
     input.map { row =>
-      expression(row, state) match {
-        case IsNoValue() => // do nothing
-        case r: RelationshipValue =>
-          deleteRelationship(r, state)
-        case n: NodeValue =>
-          deleteNode(n, state)
-        case p: PathValue =>
-          deletePath(p, state)
-        case other =>
-          throw new CypherTypeException(s"Expected a Node, Relationship or Path, but got a ${other.getClass.getSimpleName}")
+      // Lazy Implementation
+      if (row != null) {
+        expression(row, state) match {
+          case null => // do nothing
+          case IsNoValue() => // do nothing
+          case r: RelationshipValue =>
+            deleteRelationship(r, state)
+          case n: NodeValue =>
+            deleteNode(n, state)
+          case p: PathValue =>
+            deletePath(p, state)
+          case other =>
+            throw new CypherTypeException(s"Expected a Node, Relationship or Path, but got a ${other.getClass.getSimpleName}")
+        }
       }
       row
     }

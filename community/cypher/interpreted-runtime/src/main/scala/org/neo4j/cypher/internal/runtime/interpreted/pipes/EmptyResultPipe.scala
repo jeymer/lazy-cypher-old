@@ -25,10 +25,15 @@ import org.neo4j.cypher.internal.v4_0.util.attribution.Id
 case class EmptyResultPipe(source: Pipe)(val id: Id = Id.INVALID_ID) extends PipeWithSource(source) {
 
   protected def internalCreateResults(input:Iterator[ExecutionContext], state: QueryState) = {
+    // TAG: Lazy Implementation
+    input
+
+    /*
     while(input.hasNext) {
       input.next()
     }
 
     Iterator.empty
+    */
   }
 }

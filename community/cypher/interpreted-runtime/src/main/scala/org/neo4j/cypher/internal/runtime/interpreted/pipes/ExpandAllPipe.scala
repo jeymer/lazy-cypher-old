@@ -35,18 +35,25 @@ case class ExpandAllPipe(source: Pipe,
 
   protected def internalCreateResults(input: Iterator[ExecutionContext], state: QueryState): Iterator[ExecutionContext] = {
     input.flatMap {
-      row =>
-        row.getByName(fromName) match {
-          case n: NodeValue =>
-            val relationships: Iterator[RelationshipValue] = state.query.getRelationshipsForIds(n.id(), dir, types.types(state.query))
-            relationships.map { r =>
+      row => {
+        // TAG: Lazy Implementation
+        if(row == null) {
+          None
+        }
+        else {
+          row.getByName(fromName) match {
+            case n: NodeValue =>
+              val relationships: Iterator[RelationshipValue] = state.query.getRelationshipsForIds(n.id(), dir, types.types(state.query))
+              relationships.map { r =>
                 val other = r.otherNode(n)
                 executionContextFactory.copyWith(row, relName, r, toName, other)
-            }
-          case IsNoValue() => None
+              }
+            case IsNoValue() => None
 
-          case value => throw new ParameterWrongTypeException(s"Expected to find a node at '$fromName' but found $value instead")
+            case value => throw new ParameterWrongTypeException(s"Expected to find a node at '$fromName' but found $value instead")
+          }
         }
+      }
     }
   }
 }
