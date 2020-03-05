@@ -270,7 +270,16 @@ public interface Result extends ResourceIterator<Map<String,Object>>
 
     // TAG: Lazy Implementation
     /* Jeff's Lazy Additions */
-    default public String lazyResultAsString() {
+    default String lazyResultAsString() {
         throw new UnsupportedOperationException("Error: lazyResultAsString not implemented");
+    }
+    default void initializeForBatching() {
+        throw new UnsupportedOperationException("Error: initializeForBatching not implemented");
+    }
+    default void batchWith(Result other) {
+        throw new UnsupportedOperationException("Error: batchWith not implemented");
+    }
+    default void setUseCached(boolean useCached) {
+        throw new UnsupportedOperationException("Error: setUseCached not implemented");
     }
 }

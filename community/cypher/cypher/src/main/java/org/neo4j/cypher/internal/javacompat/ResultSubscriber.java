@@ -29,7 +29,15 @@ import java.util.List;
 import java.util.Map;
 
 import org.neo4j.cypher.internal.NonFatalCypherError;
+import org.neo4j.cypher.internal.result.ClosingExecutionResult;
+import org.neo4j.cypher.internal.result.StandardInternalExecutionResult;
 import org.neo4j.cypher.internal.result.string.ResultStringBuilder;
+import org.neo4j.cypher.internal.runtime.interpreted.LazyNodeValueCursorIterator;
+import org.neo4j.cypher.internal.runtime.interpreted.PipeExecutionResult;
+import org.neo4j.cypher.internal.runtime.interpreted.pipes.AllNodesScanPipe;
+import org.neo4j.cypher.internal.runtime.interpreted.pipes.NodeByLabelScanPipe;
+import org.neo4j.cypher.internal.runtime.interpreted.pipes.Pipe;
+import org.neo4j.cypher.internal.runtime.interpreted.pipes.PipeWithSource;
 import org.neo4j.exceptions.CypherExecutionException;
 import org.neo4j.exceptions.Neo4jException;
 import org.neo4j.graphdb.ExecutionPlanDescription;
@@ -58,7 +66,7 @@ public class ResultSubscriber extends PrefetchingResourceIterator<Map<String,Obj
 {
     private final DefaultValueMapper valueMapper;
     private final TransactionalContext context;
-    private QueryExecution execution;
+    QueryExecution execution;
     private AnyValue[] currentRecord;
     private Throwable error;
     private QueryStatistics statistics;
@@ -510,7 +518,7 @@ public class ResultSubscriber extends PrefetchingResourceIterator<Map<String,Obj
         {
             acceptFromMaterialized( visitor );
             // TAG: Lazy Implementation
-            // Note: Should this be true? Should the query ever be materialized in the lazy system?
+            // TODO: Should this be true? Should the query ever be materialized in the lazy system?
             success = true;
         }
         else if ( execution.isVisitable() )
@@ -547,7 +555,8 @@ public class ResultSubscriber extends PrefetchingResourceIterator<Map<String,Obj
         {
             boolean success = execution.lazyRequest( numberOfResults );
             assertNoErrors();
-            execution.await();
+            // TAG: Lazy Implementation
+            // execution.await();
             return success;
         }
         catch ( Exception e )
@@ -556,5 +565,126 @@ public class ResultSubscriber extends PrefetchingResourceIterator<Map<String,Obj
             throw converted( e );
         }
     }
+
+    // Batching methods
+    public void initializeForBatching() {
+
+        // Confirm proper types
+        if(!(this.execution instanceof ClosingExecutionResult)) {
+            System.out.println("Error in initializeForBatching: execution not a ClosingExecutionResult");
+            System.exit(1);
+        }
+        ClosingExecutionResult cr = (ClosingExecutionResult)this.execution;
+
+        if(!(cr.inner() instanceof StandardInternalExecutionResult)) {
+            System.out.println("Error in initializeForBatching: cr inner not a StandardInternalExecutionResult");
+            System.exit(1);
+        }
+        StandardInternalExecutionResult sr = (StandardInternalExecutionResult)cr.inner();
+
+        if(!(sr.runtimeResult() instanceof PipeExecutionResult)) {
+            System.out.println("Error in initializeForBatching: sr runtimeResult not a PipeExecutionResult");
+            System.exit(1);
+        }
+        PipeExecutionResult pr = (PipeExecutionResult)sr.runtimeResult();
+        pr.initializeInner();
+    }
+
+    public void batchWith(Result other) {
+
+        // Confirm proper types
+        if(!(this.execution instanceof ClosingExecutionResult)) {
+            System.out.println("Error in batchWith: execution not a ClosingExecutionResult");
+            System.exit(1);
+        }
+        ClosingExecutionResult cr = (ClosingExecutionResult)this.execution;
+
+        if(!(cr.inner() instanceof StandardInternalExecutionResult)) {
+            System.out.println("Error in batchWith: cr inner not a StandardInternalExecutionResult");
+            System.exit(1);
+        }
+        StandardInternalExecutionResult sr = (StandardInternalExecutionResult)cr.inner();
+
+        if(!(sr.runtimeResult() instanceof PipeExecutionResult)) {
+            System.out.println("Error in batchWith: sr runtimeResult not a PipeExecutionResult");
+            System.exit(1);
+        }
+        PipeExecutionResult pr = (PipeExecutionResult)sr.runtimeResult();
+
+        // Already can assume 'other' has proper types because would've been checked in initializeForBatching
+        ResultSubscriber rs = (ResultSubscriber)other;
+        ClosingExecutionResult other_cr = (ClosingExecutionResult)rs.execution;
+        StandardInternalExecutionResult other_sr = (StandardInternalExecutionResult)other_cr.inner();
+        PipeExecutionResult other_pr = (PipeExecutionResult)other_sr.runtimeResult();
+
+        Pipe this_root = pr.pipe();
+        while(this_root instanceof PipeWithSource) {
+            this_root = ((PipeWithSource) this_root).getSource();
+        }
+
+        Pipe other_root = other_pr.pipe();
+        while(other_root instanceof PipeWithSource) {
+            other_root = ((PipeWithSource) other_root).getSource();
+        }
+
+        if(other_root instanceof NodeByLabelScanPipe) {
+            if(this_root instanceof NodeByLabelScanPipe) {
+                ((NodeByLabelScanPipe)this_root).setNodes(((NodeByLabelScanPipe)other_root).nodes());
+            }
+            else if (this_root instanceof AllNodesScanPipe) {
+                // TODO
+            }
+            else {
+                System.out.println("Error in batchWith: unknown type of this_root");
+                System.exit(1);
+            }
+        } else if (other_root instanceof AllNodesScanPipe) {
+            // TODO
+        }
+        else {
+            System.out.println("Error in batchWith: unknown type of other_root");
+            System.exit(1);
+        }
+    }
+
+    public void setUseCached(boolean useCached) {
+        // Confirm proper types
+        if(!(this.execution instanceof ClosingExecutionResult)) {
+            System.out.println("Error in batchWith: execution not a ClosingExecutionResult");
+            System.exit(1);
+        }
+        ClosingExecutionResult cr = (ClosingExecutionResult)this.execution;
+
+        if(!(cr.inner() instanceof StandardInternalExecutionResult)) {
+            System.out.println("Error in batchWith: cr inner not a StandardInternalExecutionResult");
+            System.exit(1);
+        }
+        StandardInternalExecutionResult sr = (StandardInternalExecutionResult)cr.inner();
+
+        if(!(sr.runtimeResult() instanceof PipeExecutionResult)) {
+            System.out.println("Error in batchWith: sr runtimeResult not a PipeExecutionResult");
+            System.exit(1);
+        }
+        PipeExecutionResult pr = (PipeExecutionResult)sr.runtimeResult();
+
+        Pipe this_root = pr.pipe();
+        while(this_root instanceof PipeWithSource) {
+            this_root = ((PipeWithSource) this_root).getSource();
+        }
+
+        if(this_root instanceof NodeByLabelScanPipe) {
+            ((LazyNodeValueCursorIterator)((NodeByLabelScanPipe)this_root).nodes()).setUseCached(useCached);
+        }
+        else if (this_root instanceof AllNodesScanPipe) {
+            // TODO
+            //((LazyNodeValueCursorIterator)((AllNodesScanPipe)this_root).nodes()).setUseCached(useCached);
+        }
+        else {
+            System.out.println("Error in setUseCached: unknown type of this_root");
+            System.exit(1);
+        }
+
+    }
+
 
 }

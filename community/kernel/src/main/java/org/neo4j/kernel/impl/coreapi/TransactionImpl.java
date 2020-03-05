@@ -859,8 +859,33 @@ public class TransactionImpl implements InternalTransaction
         void perform( KernelTransaction transaction ) throws Exception;
     }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     // TAG: Lazy Implementation
     /* Jeff's Lazy Additions */
+
+    ArrayList<DelayedOperation> delayed = new ArrayList<>();
+    ArrayList<BatchedOperation> batched = new ArrayList<>();
+
+    final static int BATCH_SIZE = 5;
+    final static int STRIDE_SIZE = 3;
 
     private static class DelayedOperation {
         private static long _next_operation_num = 0;
@@ -875,10 +900,89 @@ public class TransactionImpl implements InternalTransaction
         }
     }
 
-    ArrayList<DelayedOperation> delayed = new ArrayList<>();
+    private static class BatchedOperation {
+        public ArrayList<DelayedOperation> batch;
+        public BatchedOperation(ArrayList<DelayedOperation> batch) {
+            this.batch = batch;
+        }
+
+        public boolean propagate() {
+            /* TODO: Optimize setting useCached
+               Probably store reference somewhere to the iterator so you don't have to search every time
+            */
+
+            boolean success = false;
+            ArrayList<DelayedOperation> finished = new ArrayList<>();
+            for(int s = 0; s < STRIDE_SIZE; s++) {
+
+                // Do first one first, getting fresh value
+                this.batch.get(0).result.setUseCached(false);
+                String result = this.batch.get(0).result.lazyResultAsString();
+                if(result != null) {
+                    success = true;
+                    System.out.println(result);
+                    finished.add(this.batch.get(0));
+                }
+
+                // Do rest
+                for(int i = 1; i < batch.size(); i++) {
+                    this.batch.get(0).result.setUseCached(true);
+                    result = this.batch.get(i).result.lazyResultAsString();
+                    if(result != null) {
+                        success = true;
+                        System.out.println(result);
+                        finished.add(this.batch.get(i));
+                    }
+                }
+
+                this.batch.removeAll(finished);
+                finished.clear();
+                if(this.batch.size() == 0) {
+                    break;
+                }
+            }
+            return success;
+        }
+
+    }
+
+    public void doBatching() {
+        if(delayedOperationsRemaining() < BATCH_SIZE) {
+            return;
+        }
+
+        // Put BATCH_SIZE into "batch"
+        ArrayList<DelayedOperation> batch = new ArrayList<>();
+        for(int i = 0; i < BATCH_SIZE; i++) {
+            batch.add(this.delayed.get(i));
+        }
+
+        // Initialize first
+        batch.get(0).result.initializeForBatching();
+
+        // Set nodes of 2->BATCH_SIZE to be same as first
+        for(int i = 1; i < batch.size(); i++) {
+            batch.get(i).result.batchWith(batch.get(0).result);
+        }
+
+        // Initialize rest
+        // TODO: Needed? Or done auto on first prop?
+
+        this.batched.add(new BatchedOperation(batch));
+        this.delayed.removeAll(batch);
+
+    }
+
+    public int operationsRemaining() {
+        return this.delayedOperationsRemaining() + this.batchedOperationsRemaining();
+    }
+
+    public int batchedOperationsRemaining() {
+        return this.batched.size();
+    }
 
     public int delayedOperationsRemaining() {
-        return delayed.size();
+        return this.delayed.size();
     }
 
     public long lazyExecute(String query) {
@@ -887,7 +991,20 @@ public class TransactionImpl implements InternalTransaction
         return delayed.operation_num;
     }
 
-    private boolean propagateRandom() {
+    public boolean propagateBatched() {
+        this.doBatching();
+        if(this.batchedOperationsRemaining() == 0) {
+            return false;
+        }
+        boolean success = this.batched.get(0).propagate();
+        if(this.batched.get(0).batch.size() == 0) {
+            this.batched.remove(0);
+        }
+        return success;
+    }
+
+
+    public boolean propagateRandom() {
         if(this.delayed.isEmpty()) {
             return false;
         }
@@ -901,7 +1018,7 @@ public class TransactionImpl implements InternalTransaction
         return false;
     }
 
-    private boolean propagateFirst() {
+    public boolean propagateFirst() {
         if(this.delayed.isEmpty()) {
             return false;
         }
@@ -913,10 +1030,4 @@ public class TransactionImpl implements InternalTransaction
         }
         return false;
     }
-    public boolean propagate() {
-        return propagateFirst();
-        //return propagateRandom();
-    }
-
-
 }

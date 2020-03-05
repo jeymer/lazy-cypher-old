@@ -22,25 +22,32 @@ package org.neo4j.cypher.internal.runtime.interpreted.pipes
 import org.neo4j.cypher.internal.runtime.ExecutionContext
 import org.neo4j.cypher.internal.runtime.interpreted.pipes.LazyLabel.UNKNOWN
 import org.neo4j.cypher.internal.v4_0.util.attribution.Id
+import org.neo4j.values.virtual.NodeValue
 
 case class NodeByLabelScanPipe(ident: String, label: LazyLabel)
                               (val id: Id = Id.INVALID_ID) extends Pipe  {
+
+  // TAG: Lazy Implementation
+  var nodes : Iterator[NodeValue] = _
+  def setNodes(iterator: Iterator[NodeValue]) : Unit = { nodes = iterator }
 
   protected def internalCreateResults(state: QueryState): Iterator[ExecutionContext] = {
 
     val id = label.getId(state.query)
     if (id != UNKNOWN) {
-        val nodes = state.query.getNodesByLabel(id)
-        val baseContext = state.newExecutionContext(executionContextFactory)
-        nodes.map(n => {
-          // TAG: Lazy Implementation
-          if (n == null) {
-            null
-          }
-          else {
-            executionContextFactory.copyWith(baseContext, ident, n)
-          }
-        })
+      if(nodes == null) {
+        setNodes(state.query.getNodesByLabel(id))
+      }
+      val baseContext = state.newExecutionContext(executionContextFactory)
+      nodes.map(n => {
+        // TAG: Lazy Implementation
+        if (n == null) {
+          null
+        }
+        else {
+          executionContextFactory.copyWith(baseContext, ident, n)
+        }
+      })
     } else Iterator.empty
   }
 }

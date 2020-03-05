@@ -473,14 +473,27 @@ public interface Transaction extends AutoCloseable
     default int delayedOperationsRemaining() {
         throw new UnsupportedOperationException("Error delayedOperationsRemaining not implemented");
     }
+    default int batchedOperationsRemaining() {
+        throw new UnsupportedOperationException("Error batchedOperationsRemaining not implemented");
+    }
+    default int operationsRemaining() {
+        throw new UnsupportedOperationException("Error operationsRemaining not implemented");
+    }
 
     default long lazyExecute(String query) {
         throw new UnsupportedOperationException("Error: lazyExecute not implemented");
     }
 
-    default boolean propagate() {
-        throw new UnsupportedOperationException("Error: propagate not implemented");
+    default boolean propagateFirst() {
+        throw new UnsupportedOperationException("Error: propagateFirst not implemented");
     }
+    default boolean propagateRandom() {
+        throw new UnsupportedOperationException("Error: propagateRandom not implemented");
+    }
+    default boolean propagateBatched() {
+    throw new UnsupportedOperationException("Error: propagateBatched not implemented");
+}
+
 
 
 }

@@ -34,7 +34,7 @@ import org.neo4j.kernel.impl.query.QuerySubscriber
 
 class StandardInternalExecutionResult(context: QueryContext,
                                       runtime: RuntimeName,
-                                      runtimeResult: RuntimeResult,
+                                      runtime_result: RuntimeResult,
                                       taskCloser: TaskCloser,
                                       override val queryType: InternalQueryType,
                                       override val executionMode: ExecutionMode,
@@ -43,6 +43,8 @@ class StandardInternalExecutionResult(context: QueryContext,
   extends InternalExecutionResult {
 
   self =>
+
+  def runtimeResult : RuntimeResult = runtime_result
 
   override def initiate(): Unit = {
     // For write only queries and queries that return no rows, execute all
@@ -155,7 +157,7 @@ class StandardInternalExecutionResult(context: QueryContext,
 
   }
   // TAG: Lazy Implementation
-  override def lazyRequest(numberOfRows: Long): Boolean = runtimeResult.lazyRequest(numberOfRows)
+  override def lazyRequest(numberOfRows: Long): Boolean =  runtimeResult.lazyRequest(numberOfRows)
 }
 
 

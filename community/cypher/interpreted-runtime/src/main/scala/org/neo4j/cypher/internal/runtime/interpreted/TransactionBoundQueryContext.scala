@@ -903,68 +903,6 @@ sealed class TransactionBoundQueryContext(val transactionalContext: Transactiona
     case IndexOrderNone => KernelIndexOrder.NONE
   }
 
-  abstract class CursorIterator[T] extends Iterator[T] with AutoCloseable {
-    // TAG: Lazy Implementation
-    protected var _next: T = fetchNext()
-
-    protected def fetchNext(): T
-
-    protected def close(): Unit
-
-    override def hasNext: Boolean = _next != null
-
-    override def next(): T = {
-      if (!hasNext) {
-        close()
-        Iterator.empty.next()
-      }
-
-      val current = _next
-      _next = fetchNext()
-      if (!hasNext) {
-        close()
-      }
-      current
-    }
-  }
-
-  // TAG: Lazy Implementation
-  abstract class LazyNodeValueCursorIterator extends CursorIterator[NodeValue] {
-
-    /* Lazy additions */
-    private val _strideSize: Int = 3
-    private var _currentcount: Int = 0
-    protected var _finished: Boolean = false
-    def isFinished: Boolean = _finished
-
-    protected def fetchNext(): NodeValue
-
-    protected def close(): Unit
-
-    override def next(): NodeValue = {
-      if (!hasNext) {
-        close()
-        _finished = true
-        Iterator.empty.next()
-      }
-
-      if(_currentcount == _strideSize) {
-        // Finished exploring stride size
-        _currentcount = 0
-        return null
-      }
-
-      val current = _next
-      _next = fetchNext()
-      _currentcount += 1
-      if (!hasNext) {
-        close()
-        _finished = true
-      }
-      current
-    }
-  }
-
   class RelationshipCursorIterator(selectionCursor: RelationshipSelectionCursor) extends RelationshipIterator with AutoCloseable {
 
     import RelationshipCursorIterator.{NOT_INITIALIZED, NO_ID}

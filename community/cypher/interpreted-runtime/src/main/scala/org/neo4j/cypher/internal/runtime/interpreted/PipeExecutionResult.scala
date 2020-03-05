@@ -28,12 +28,15 @@ import org.neo4j.cypher.result.RuntimeResult.ConsumptionState
 import org.neo4j.cypher.result.{QueryProfile, RuntimeResult}
 import org.neo4j.kernel.impl.query.QuerySubscriber
 
-class PipeExecutionResult(pipe: Pipe,
+
+class PipeExecutionResult(p: Pipe,
                           val fieldNames: Array[String],
                           val state: QueryState,
                           override val queryProfile: QueryProfile,
                           subscriber: QuerySubscriber)
   extends RuntimeResult {
+
+  def pipe : Pipe = p
 
   private var demand = 0L
   private var cancelled = false
@@ -87,11 +90,15 @@ class PipeExecutionResult(pipe: Pipe,
   private def checkForOverflow(value: Long): Long =
     if (value < 0) Long.MaxValue else value
 
+  def initializeInner(): Unit = {
+    if (inner == null) {
+      inner =  pipe.createResults(state)
+    }
+  }
+
   // TAG: Lazy Implementation
   override def lazyRequest(numberOfRecords: Long): Boolean = {
-    if (inner == null) {
-      inner = pipe.createResults(state)
-    }
+    initializeInner()
     demand = checkForOverflow(demand + numberOfRecords)
     serveResults()
   }
