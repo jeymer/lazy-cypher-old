@@ -492,7 +492,14 @@ public interface Transaction extends AutoCloseable
     }
     default boolean propagateBatched() {
     throw new UnsupportedOperationException("Error: propagateBatched not implemented");
+    }
+    default void startPropagation() {
+        throw new UnsupportedOperationException("Error: startPropagation not implemented");
+    }
+    default void stopPropagation() {
+    throw new UnsupportedOperationException("Error: stopPropagation not implemented");
 }
+
 
 
 

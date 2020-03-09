@@ -20,6 +20,11 @@
 package org.neo4j.kernel.impl.coreapi;
 
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.neo4j.common.EntityType;
 import org.neo4j.exceptions.KernelException;
@@ -881,10 +886,45 @@ public class TransactionImpl implements InternalTransaction
     // TAG: Lazy Implementation
     /* Jeff's Lazy Additions */
 
+    final static int NUM_THREADS = 4;
+    ExecutorService thread_pool = Executors.newFixedThreadPool(NUM_THREADS);
+    private boolean PROPAGATING = false;
+    private class PropagateRunner implements Runnable{
+        public void run() {
+            while(PROPAGATING) {
+                propagateBatchedParallel();
+            }
+        }
+    }
+    public void startPropagation() {
+        this.PROPAGATING = true;
+        System.out.println("Beginning propagation with " + NUM_THREADS + " threads");
+        for(int i = 0; i < NUM_THREADS; i++) {
+            this.thread_pool.execute(new PropagateRunner());
+        }
+    }
+
+    public void stopPropagation() {
+        System.out.println("Waiting for operations to finish...");
+        // Wait for all operations to finish
+        long start = System.currentTimeMillis();
+        while(this.operationsRemaining() != 0) {
+            if(System.currentTimeMillis() - start % 1000 == 0) {
+                System.out.println("D: " + delayed.size() + " B: " + batched.size());
+            }
+        }
+        System.out.println("Ending propagation");
+        this.PROPAGATING = false;
+        this.thread_pool.shutdown();
+    }
+
     ArrayList<DelayedOperation> delayed = new ArrayList<>();
     ArrayList<BatchedOperation> batched = new ArrayList<>();
+    ReentrantLock delayed_lock = new ReentrantLock();
+    ReentrantReadWriteLock batched_lock = new ReentrantReadWriteLock();
+    ReentrantLock batching_lock = new ReentrantLock();
 
-    final static int BATCH_SIZE = 5;
+    final static int MAX_BATCH_SIZE = 5;
     final static int STRIDE_SIZE = 3;
 
     private static class DelayedOperation {
@@ -901,14 +941,17 @@ public class TransactionImpl implements InternalTransaction
     }
 
     private static class BatchedOperation {
+        public int num_times_propagated = 0;
+        public ReentrantLock lock;
         public ArrayList<DelayedOperation> batch;
         public BatchedOperation(ArrayList<DelayedOperation> batch) {
             this.batch = batch;
+            this.lock = new ReentrantLock();
         }
 
         public boolean propagate() {
-            /* TODO: Optimize setting useCached
-               Probably store reference somewhere to the iterator so you don't have to search every time
+            /*
+               TODO: Optimize setting useCached, probably store reference somewhere to the iterator so you don't have to search every time
             */
 
             boolean success = false;
@@ -920,6 +963,7 @@ public class TransactionImpl implements InternalTransaction
                 String result = this.batch.get(0).result.lazyResultAsString();
                 if(result != null) {
                     success = true;
+                    System.out.println(this.batch.get(0).query);
                     System.out.println(result);
                     finished.add(this.batch.get(0));
                 }
@@ -930,6 +974,7 @@ public class TransactionImpl implements InternalTransaction
                     result = this.batch.get(i).result.lazyResultAsString();
                     if(result != null) {
                         success = true;
+                        System.out.println(this.batch.get(i).query);
                         System.out.println(result);
                         finished.add(this.batch.get(i));
                     }
@@ -937,6 +982,7 @@ public class TransactionImpl implements InternalTransaction
 
                 this.batch.removeAll(finished);
                 finished.clear();
+                this.num_times_propagated++;
                 if(this.batch.size() == 0) {
                     break;
                 }
@@ -947,29 +993,41 @@ public class TransactionImpl implements InternalTransaction
     }
 
     public void doBatching() {
-        if(delayedOperationsRemaining() < BATCH_SIZE) {
+
+        this.delayed_lock.lock();
+
+        // Make sure operations exist
+        if(this.delayed.size() == 0) {
+            this.delayed_lock.unlock();
             return;
         }
 
-        // Put BATCH_SIZE into "batch"
+        // Put up to MAX_BATCH_SIZE into "batch"
         ArrayList<DelayedOperation> batch = new ArrayList<>();
-        for(int i = 0; i < BATCH_SIZE; i++) {
+        int i = 0;
+        while(batch.size() < MAX_BATCH_SIZE && i < this.delayed.size()) {
             batch.add(this.delayed.get(i));
+            i++;
         }
 
         // Initialize first
         batch.get(0).result.initializeForBatching();
 
-        // Set nodes of 2->BATCH_SIZE to be same as first
-        for(int i = 1; i < batch.size(); i++) {
+        // Set nodes of 2->end to be same as first
+        for(i = 1; i < batch.size(); i++) {
             batch.get(i).result.batchWith(batch.get(0).result);
         }
 
         // Initialize rest
         // TODO: Needed? Or done auto on first prop?
 
+        this.batched_lock.writeLock().lock();
         this.batched.add(new BatchedOperation(batch));
+        System.out.println("New batch of " + batch.size());
+        this.batched_lock.writeLock().unlock();
+
         this.delayed.removeAll(batch);
+        this.delayed_lock.unlock();
 
     }
 
@@ -987,8 +1045,43 @@ public class TransactionImpl implements InternalTransaction
 
     public long lazyExecute(String query) {
         DelayedOperation delayed = new DelayedOperation(query,this.execute(query));
+        this.delayed_lock.lock();
         this.delayed.add(delayed);
+        this.delayed_lock.unlock();
         return delayed.operation_num;
+    }
+
+    public boolean propagateBatchedParallel() {
+        if(this.batching_lock.tryLock()) {
+            // Only allow one thread to do batching at a time, otherwise dont't waste the time
+            this.doBatching();
+            this.batching_lock.unlock();
+        }
+        if(this.batched_lock.readLock().tryLock()) {
+            if(this.batchedOperationsRemaining() == 0) {
+                this.batched_lock.readLock().unlock();
+                return false;
+            }
+            for(int i = 0; i < this.batched.size(); i++) {
+                BatchedOperation b = this.batched.get(i);
+                if(b.lock.tryLock()) {
+                    if(i == 0 || this.batched.get(i-1).num_times_propagated - b.num_times_propagated > STRIDE_SIZE) {
+                        boolean success = b.propagate();
+                        if(b.batch.size() == 0) {
+                            this.batched_lock.readLock().unlock();
+                            this.batched_lock.writeLock().lock();
+                            this.batched.remove(b);
+                            this.batched_lock.writeLock().unlock();
+                            return success;
+                        }
+                        this.batched_lock.readLock().unlock();
+                        return success;
+                    }
+                }
+            }
+            this.batched_lock.readLock().unlock();
+        }
+        return false;
     }
 
     public boolean propagateBatched() {
