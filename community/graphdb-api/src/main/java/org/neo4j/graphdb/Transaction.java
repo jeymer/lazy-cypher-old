@@ -491,16 +491,31 @@ public interface Transaction extends AutoCloseable
         throw new UnsupportedOperationException("Error: propagateRandom not implemented");
     }
     default boolean propagateBatched() {
-    throw new UnsupportedOperationException("Error: propagateBatched not implemented");
+        throw new UnsupportedOperationException("Error: propagateBatched not implemented");
+    }
+    default boolean propagateBatchedParallel() {
+        throw new UnsupportedOperationException("Error: propagateBatched not implemented");
     }
     default void startPropagation() {
         throw new UnsupportedOperationException("Error: startPropagation not implemented");
     }
     default void stopPropagation() {
-    throw new UnsupportedOperationException("Error: stopPropagation not implemented");
-}
+        throw new UnsupportedOperationException("Error: stopPropagation not implemented");
+    }
 
-
-
-
+    default void batchDelayed() {
+        throw new UnsupportedOperationException("Error: stopPropagation not implemented");
+    }
+    default void getOperationTime(long operationNum) {
+        throw new UnsupportedOperationException("Error: getOperationTime not implemented");
+    }
+    default void shutdownThreadPool() {
+        throw new UnsupportedOperationException("Error: shutdownThreadPool not implemented");
+    }
+    default void setNumThreads(int num_threads) {
+            throw new UnsupportedOperationException("Error: setNumThreads not implemented");
+    }
+    default long getNumCompletedInSeconds( long seconds, long time_from ) {
+        throw new UnsupportedOperationException("Error: getNumCompletedInSeconds not implemented");
+    }
 }

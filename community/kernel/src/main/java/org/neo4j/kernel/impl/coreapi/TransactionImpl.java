@@ -20,6 +20,7 @@
 package org.neo4j.kernel.impl.coreapi;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -886,46 +887,84 @@ public class TransactionImpl implements InternalTransaction
     // TAG: Lazy Implementation
     /* Jeff's Lazy Additions */
 
-    final static int NUM_THREADS = 4;
-    ExecutorService thread_pool = Executors.newFixedThreadPool(NUM_THREADS);
-    private boolean PROPAGATING = false;
-    private class PropagateRunner implements Runnable{
-        public void run() {
-            while(PROPAGATING) {
-                propagateBatchedParallel();
-            }
-        }
+    final static int MAX_BATCH_SIZE = 10;
+    final static int STRIDE_SIZE = 42000;
+    static int NUM_THREADS = 4;
+    public void setNumThreads(int num_threads) {
+        NUM_THREADS = num_threads;
     }
-    public void startPropagation() {
-        this.PROPAGATING = true;
-        System.out.println("Beginning propagation with " + NUM_THREADS + " threads");
-        for(int i = 0; i < NUM_THREADS; i++) {
-            this.thread_pool.execute(new PropagateRunner());
+
+    ExecutorService thread_pool = Executors.newFixedThreadPool(NUM_THREADS);
+
+    private class PropagateRunner implements Runnable{
+        int index;
+        BatchedOperation batch;
+        PropagateRunner(int index) {
+            this.index = index;
+            this.batch = batched.data[index];
+        }
+        public void run() {
+            if(this.batch.lock.tryLock()) {
+                this.batch.propagate();
+                if(this.batch.batch.size() == 0) {
+                    batched.remove(this.index);
+                }
+                this.batch.lock.unlock();
+            }
         }
     }
 
+    private static boolean PROPAGATING = false;
+    public void startPropagation() {
+        PROPAGATING = true;
+        System.out.println("Beginning propagation with " + NUM_THREADS + " threads");
+        for(int i = 0; i < NUM_THREADS; i++) {
+            thread_pool.execute(new ConstantPropagationRunner());
+        }
+    }
     public void stopPropagation() {
-        System.out.println("Waiting for operations to finish...");
-        // Wait for all operations to finish
-        long start = System.currentTimeMillis();
-        while(this.operationsRemaining() != 0) {
-            if(System.currentTimeMillis() - start % 1000 == 0) {
-                System.out.println("D: " + delayed.size() + " B: " + batched.size());
+        PROPAGATING = false;
+        System.out.println("Shutting down thread pool");
+        thread_pool.shutdown();
+    }
+
+    private class ConstantPropagationRunner implements Runnable {
+        public void run() {
+            while(PROPAGATING) {
+                int i = batched.oldest;
+                while ( i < batched.newest ) {
+                    BatchedOperation prev;
+                    if(i <= 0) {
+                        prev = null;
+                    } else {
+                        prev = batched.data[i-1];
+                    }
+
+                    BatchedOperation current = batched.data[i];
+                    if(current != null && current.lock.tryLock() ) {
+                        // Check can propagate
+                        if(current.batch.size() > 0 && (prev == null || prev.num_times_propagated >= current.num_times_propagated + STRIDE_SIZE)) {
+                            // Do propagation
+                            if (current.propagate()) {
+                                batched.remove(i);
+                            }
+                            // reset to beginning (favoring oldest)
+                            i = batched.oldest-1;
+                        }
+                        current.lock.unlock();
+                    }
+                    i++;
+                }
             }
         }
-        System.out.println("Ending propagation");
-        this.PROPAGATING = false;
-        this.thread_pool.shutdown();
     }
 
     ArrayList<DelayedOperation> delayed = new ArrayList<>();
-    ArrayList<BatchedOperation> batched = new ArrayList<>();
     ReentrantLock delayed_lock = new ReentrantLock();
-    ReentrantReadWriteLock batched_lock = new ReentrantReadWriteLock();
-    ReentrantLock batching_lock = new ReentrantLock();
 
-    final static int MAX_BATCH_SIZE = 5;
-    final static int STRIDE_SIZE = 3;
+    BatchedOperationsArray batched = new BatchedOperationsArray();
+
+
 
     private static class DelayedOperation {
         private static long _next_operation_num = 0;
@@ -954,8 +993,14 @@ public class TransactionImpl implements InternalTransaction
                TODO: Optimize setting useCached, probably store reference somewhere to the iterator so you don't have to search every time
             */
 
+            if(this.batch.size() == 0) {
+                return false;
+            }
+
             boolean success = false;
             ArrayList<DelayedOperation> finished = new ArrayList<>();
+            long first = this.batch.get(0).operation_num;
+ //           System.out.println("starting propagation of batch w first element " + first);
             for(int s = 0; s < STRIDE_SIZE; s++) {
 
                 // Do first one first, getting fresh value
@@ -966,6 +1011,8 @@ public class TransactionImpl implements InternalTransaction
                     System.out.println(this.batch.get(0).query);
                     System.out.println(result);
                     finished.add(this.batch.get(0));
+                    finish_times.put(this.batch.get(0).operation_num, System.currentTimeMillis());
+                    completedOperationNumbers.addFirst(new CompletedOperationRecord(this.batch.get(0).operation_num, System.currentTimeMillis()));
                 }
 
                 // Do rest
@@ -977,6 +1024,8 @@ public class TransactionImpl implements InternalTransaction
                         System.out.println(this.batch.get(i).query);
                         System.out.println(result);
                         finished.add(this.batch.get(i));
+                        finish_times.put(this.batch.get(i).operation_num, System.currentTimeMillis());
+                        completedOperationNumbers.addFirst(new CompletedOperationRecord(this.batch.get(i).operation_num, System.currentTimeMillis()));
                     }
                 }
 
@@ -987,12 +1036,70 @@ public class TransactionImpl implements InternalTransaction
                     break;
                 }
             }
+  //          System.out.println("ending propagation of batch w first element " + first);
             return success;
         }
 
     }
 
-    public void doBatching() {
+    private class BatchedOperationsArray {
+        BatchedOperation[] data;
+        volatile int oldest;
+        volatile int newest;
+        volatile int size;
+        ReentrantLock lock;
+
+        public BatchedOperationsArray() {
+            this.reset();
+        }
+
+        public void add(BatchedOperation batch) {
+            this.lock.lock();
+            this.data[this.newest++] = batch;
+            this.size++;
+            this.lock.unlock();
+        }
+
+        public void remove(int index) {
+            this.lock.lock();
+            this.data[index] = null;
+            this.size--;
+            this.moveTail();
+            this.lock.unlock();
+        }
+
+        public void moveTail() {
+            while(this.size != 0 && this.oldest < this.newest && this.data[oldest] == null) {
+                this.oldest++;
+            }
+        }
+
+        // Not 100% thread safe, but isn't the end of the world
+        public int size() {
+            return this.size;
+        }
+
+        public void batch(int index) {
+
+        }
+
+        public int getOldest() {
+            return this.oldest;
+        }
+
+        public int getNewest() {
+            return this.newest;
+        }
+
+        void reset() {
+            this.data = new BatchedOperation[16384];
+            this.newest = this.oldest = this.size = 0;
+            this.lock = new ReentrantLock();
+        }
+
+    }
+
+    public void batchDelayed() {
 
         this.delayed_lock.lock();
 
@@ -1021,13 +1128,11 @@ public class TransactionImpl implements InternalTransaction
         // Initialize rest
         // TODO: Needed? Or done auto on first prop?
 
-        this.batched_lock.writeLock().lock();
-        this.batched.add(new BatchedOperation(batch));
-        System.out.println("New batch of " + batch.size());
-        this.batched_lock.writeLock().unlock();
-
         this.delayed.removeAll(batch);
         this.delayed_lock.unlock();
+
+        this.batched.add(new BatchedOperation(batch));
+        System.out.println("New batch of " + batch.size());
 
     }
 
@@ -1045,57 +1150,30 @@ public class TransactionImpl implements InternalTransaction
 
     public long lazyExecute(String query) {
         DelayedOperation delayed = new DelayedOperation(query,this.execute(query));
+        this.start_times.put(delayed.operation_num, System.currentTimeMillis());
         this.delayed_lock.lock();
         this.delayed.add(delayed);
         this.delayed_lock.unlock();
         return delayed.operation_num;
     }
 
+    final static int WORK_TOLERANCE = 3;
     public boolean propagateBatchedParallel() {
-        if(this.batching_lock.tryLock()) {
-            // Only allow one thread to do batching at a time, otherwise dont't waste the time
-            this.doBatching();
-            this.batching_lock.unlock();
-        }
-        if(this.batched_lock.readLock().tryLock()) {
-            if(this.batchedOperationsRemaining() == 0) {
-                this.batched_lock.readLock().unlock();
-                return false;
-            }
-            for(int i = 0; i < this.batched.size(); i++) {
-                BatchedOperation b = this.batched.get(i);
-                if(b.lock.tryLock()) {
-                    if(i == 0 || this.batched.get(i-1).num_times_propagated - b.num_times_propagated > STRIDE_SIZE) {
-                        boolean success = b.propagate();
-                        if(b.batch.size() == 0) {
-                            this.batched_lock.readLock().unlock();
-                            this.batched_lock.writeLock().lock();
-                            this.batched.remove(b);
-                            this.batched_lock.writeLock().unlock();
-                            return success;
-                        }
-                        this.batched_lock.readLock().unlock();
-                        return success;
-                    }
+        boolean success = false;
+        for (int i = this.batched.oldest; i < this.batched.newest; i++) {
+            if (this.batched.data[i] != null && !this.batched.data[i].lock.isLocked()) {
+                if (((ThreadPoolExecutor) this.thread_pool).getQueue().size() < NUM_THREADS * WORK_TOLERANCE) {
+                    this.batched.batch(i);
+                    this.thread_pool.execute(new PropagateRunner(i));
+                    return true;
+                    //success = true;
                 }
-            }
-            this.batched_lock.readLock().unlock();
-        }
-        return false;
-    }
 
-    public boolean propagateBatched() {
-        this.doBatching();
-        if(this.batchedOperationsRemaining() == 0) {
-            return false;
-        }
-        boolean success = this.batched.get(0).propagate();
-        if(this.batched.get(0).batch.size() == 0) {
-            this.batched.remove(0);
+            }
         }
         return success;
-    }
 
+    }
 
     public boolean propagateRandom() {
         if(this.delayed.isEmpty()) {
@@ -1122,5 +1200,43 @@ public class TransactionImpl implements InternalTransaction
             return true;
         }
         return false;
+    }
+
+    private static ConcurrentHashMap<Long, Long> start_times = new ConcurrentHashMap<>();
+    private static ConcurrentHashMap<Long, Long> finish_times = new ConcurrentHashMap<>();
+    public void getOperationTime(long operationNum) {
+        if(!start_times.containsKey(operationNum)) {
+            System.out.println("ERROR: No start time for operation num " + operationNum);
+        }
+        else if(!finish_times.containsKey(operationNum)) {
+            System.out.println("ERROR: No end time for operation num " + operationNum);
+        }
+        else {
+            System.out.println(finish_times.get(operationNum) - start_times.get(operationNum));
+        }
+    }
+    public void shutdownThreadPool() {
+        this.thread_pool.shutdown();
+    }
+
+    public static class CompletedOperationRecord {
+        long operationNumber;
+        long timeCompleted;
+        public CompletedOperationRecord(long operationNumber, long timeCompleted) {
+            this.operationNumber = operationNumber;
+            this.timeCompleted = timeCompleted;
+        }
+    }
+    private static LinkedList<CompletedOperationRecord> completedOperationNumbers = new LinkedList<>();
+    public long getNumCompletedInSeconds( long seconds, long time_from ) {
+        long min_allowed_time = time_from - 1000*seconds;
+        long count = 0;
+        for(CompletedOperationRecord r : completedOperationNumbers) {
+            if (r.timeCompleted < min_allowed_time) {
+                return count;
+            }
+            count++;
+        }
+        return count;
     }
 }

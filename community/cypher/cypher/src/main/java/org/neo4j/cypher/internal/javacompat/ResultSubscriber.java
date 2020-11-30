@@ -540,7 +540,8 @@ public class ResultSubscriber extends PrefetchingResourceIterator<Map<String,Obj
             ResultVisitor<VisitationException> visitor ) throws VisitationException
     {
         this.visitor = visitor;
-        boolean success = lazyFetchResults( Long.MAX_VALUE );
+        //boolean success = lazyFetchResults( Long.MAX_VALUE );
+        boolean success = lazyFetchResults(1);
         if ( visitException != null )
         {
             throw (VisitationException) visitException;
@@ -672,17 +673,26 @@ public class ResultSubscriber extends PrefetchingResourceIterator<Map<String,Obj
             this_root = ((PipeWithSource) this_root).getSource();
         }
 
-        if(this_root instanceof NodeByLabelScanPipe) {
-            ((LazyNodeValueCursorIterator)((NodeByLabelScanPipe)this_root).nodes()).setUseCached(useCached);
+        try {
+
+
+            if (this_root instanceof NodeByLabelScanPipe) {
+                ((LazyNodeValueCursorIterator) ((NodeByLabelScanPipe) this_root).nodes()).setUseCached(useCached);
+            }
+            else if (this_root instanceof AllNodesScanPipe) {
+                // TODO
+                //((LazyNodeValueCursorIterator)((AllNodesScanPipe)this_root).nodes()).setUseCached(useCached);
+            }
+            else {
+                System.out.println("Error in setUseCached: unknown type of this_root");
+                System.exit(1);
+            }
+
+
+        } catch (Exception e) {
+            System.out.println("Exception in setUseCached");
         }
-        else if (this_root instanceof AllNodesScanPipe) {
-            // TODO
-            //((LazyNodeValueCursorIterator)((AllNodesScanPipe)this_root).nodes()).setUseCached(useCached);
-        }
-        else {
-            System.out.println("Error in setUseCached: unknown type of this_root");
-            System.exit(1);
-        }
+
 
     }
 

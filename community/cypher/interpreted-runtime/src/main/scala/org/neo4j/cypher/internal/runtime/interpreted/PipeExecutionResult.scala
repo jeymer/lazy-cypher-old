@@ -76,19 +76,26 @@ class PipeExecutionResult(p: Pipe,
 
   private def serveResults(): Boolean = {
     while (inner.hasNext && demand > 0 && !cancelled) {
-      if(inner.next() == null) {
-        return false
-      }
+      //if(inner.next() == null) {
+      //  return false
+      //}
+      inner.next()
       demand -= 1L
     }
     if (!inner.hasNext) {
       subscriber.onResultCompleted(state.getStatistics)
+      true
+    } else {
+      false
     }
-    true
+
   }
 
   private def checkForOverflow(value: Long): Long =
-    if (value < 0) Long.MaxValue else value
+    if (value < 0) {
+      println("check, had overflow")
+      Long.MaxValue
+    } else value
 
   def initializeInner(): Unit = {
     if (inner == null) {

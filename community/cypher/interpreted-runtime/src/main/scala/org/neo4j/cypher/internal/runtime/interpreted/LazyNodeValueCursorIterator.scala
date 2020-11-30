@@ -10,8 +10,8 @@ abstract class LazyNodeValueCursorIterator extends CursorIterator[NodeValue] {
   /* Lazy additions */
 
   // Stride Additions
-  private val _strideSize: Int = 1
-  private var _currentcount: Int = 0
+  //private val _strideSize: Int = 1
+  //private var _currentcount: Int = 0
 
   // Batching (cached) additions
   var _cached : NodeValue = _
@@ -32,27 +32,31 @@ abstract class LazyNodeValueCursorIterator extends CursorIterator[NodeValue] {
       Iterator.empty.next()
     }
 
+    /*
     if(_currentcount == _strideSize) {
       // Finished exploring stride size
       _currentcount = 0
       return null
     }
+    */
 
     if(_useCached) {
-      _currentcount += 1
+      //_currentcount += 1
+      /*
       if(_next == null) {
         _useCached = false
-        _currentcount = 0
+        //_currentcount = 0
       }
+      */
       return _cached
     }
 
     val current = _next
     _cached = current
     _next = fetchNext()
-    _currentcount += 1
+   // _currentcount += 1
     if (!hasNext) {
-      _currentcount = 0
+    //  _currentcount = 0
       close()
     }
     current

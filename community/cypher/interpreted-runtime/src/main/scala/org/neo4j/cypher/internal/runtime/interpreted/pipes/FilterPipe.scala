@@ -31,8 +31,22 @@ case class FilterPipe(source: Pipe, predicate: Expression)
 
   protected def internalCreateResults(input: Iterator[ExecutionContext], state: QueryState): Iterator[ExecutionContext] = {
     // TAG: Lazy Implementation
+    /*
     input.filter(ctx => {
       (ctx == null) || (predicate(ctx, state) eq Values.TRUE)
+    })
+    */
+
+    // Build filter with a map
+    // Essentially, we don't want the filter pipe to keep pulling until it finds an element that passes
+    // We want it to only check one at a time, so all filters in a batch are still at the same element
+    // Therefore, if you pull one which doesn't match, then just pass along null
+    input.map(ctx => {
+      if(predicate(ctx, state) eq Values.TRUE) {
+        ctx
+      } else {
+        null
+      }
     })
   }
 }
